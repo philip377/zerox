@@ -99,7 +99,7 @@
   <div class="eyebrow small"><span class="line"></span> 07 / ГАЛЕРЕЯ ПРОЕКТА</div>
   <div class="dev-gallery-intro"><h2>От первых набросков<br>до <em>живого мира.</em></h2><p>Здесь сохраняется история создания ZeroxGenesis: визуальные концепты, кадры из Unreal Engine 5.6, тесты механизмов, интерьеры и настоящие этапы разработки. Каждое новое изображение — ещё один шаг к готовой вселенной.</p></div>
   <div class="dev-gallery-bar" role="group" aria-label="Фильтр галереи"><button class="dg-filter" type="button" data-gallery-filter="all" aria-pressed="true">ВСЕ МАТЕРИАЛЫ</button><button class="dg-filter" type="button" data-gallery-filter="development" aria-pressed="false">РАЗРАБОТКА</button><button class="dg-filter" type="button" data-gallery-filter="concept" aria-pressed="false">КОНЦЕПТЫ</button><span class="dev-gallery-count" id="galleryCount">АРХИВ ЗАГРУЖАЕТСЯ</span></div>
-  <div class="dev-gallery-grid" id="devGalleryGrid" aria-live="polite"></div>
+  <div class="dev-gallery-grid" id="devGalleryGrid" aria-live="polite"></div><button class="mini" type="button" id="galleryLoadMore" style="display:none;margin:24px auto 0;min-width:220px;cursor:pointer">ПОКАЗАТЬ ЕЩЁ 24 ФОТО ↓</button>
   <p class="gallery-note" id="galleryStatus">Концепты и реальные кадры из игры отмечаются отдельно. Новые материалы автоматически появляются в этом разделе после добавления в архив.</p>
 </div></section>
 <dialog class="dg-lightbox" id="galleryDialog" aria-label="Просмотр фотографий галереи">
@@ -136,17 +136,22 @@
    {title:'Архитектура комплекса',image:document.querySelector('#hub .shot:nth-child(3) img'),category:'concept',tag:'КОНЦЕПТ / АРХИТЕКТУРА'},
    {title:'Сканирующий комплекс',image:document.querySelector('#scanner .scanner-visual img'),category:'concept',tag:'КОНЦЕПТ / СКАНЕР'}
  ].filter(x=>x.image).map(x=>({title:x.title,src:x.image.currentSrc||x.image.src,category:x.category,tag:x.tag,caption:'Визуальная концепция проекта'}));
- let galleryItems=featured.slice();let galleryFilter='all';let galleryVisible=[];let selectedImage=0;
+ let galleryItems=featured.slice();let galleryFilter='all';let galleryVisible=[];let selectedImage=0;let galleryDisplayLimit=24;
  const galleryDialog=document.getElementById('galleryDialog');
  const galleryLarge=document.getElementById('galleryLarge');
  const galleryTitle=document.getElementById('galleryTitle');
  const galleryPosition=document.getElementById('galleryPosition');
- function redrawGallery(){
+ function redrawGallery(resetPage=true){
+   if(resetPage)galleryDisplayLimit=24;
    galleryVisible=galleryItems.filter(x=>galleryFilter==='all'||x.category===galleryFilter);
    galleryGrid.replaceChildren();
    document.getElementById('galleryCount').textContent=galleryVisible.length+' / ФОТО';
+   const loadMore=document.getElementById('galleryLoadMore');
+   const remaining=Math.max(0,galleryVisible.length-galleryDisplayLimit);
+   loadMore.style.display=remaining?'block':'none';
+   loadMore.textContent='ПОКАЗАТЬ ЕЩЁ '+Math.min(24,remaining)+' ФОТО ↓';
    if(!galleryVisible.length){const empty=document.createElement('div');empty.className='dg-empty';empty.textContent='Первые реальные скриншоты разработки появятся здесь после публикации. А пока посмотри концепты будущей вселенной.';galleryGrid.appendChild(empty);return}
-   for(const [i,item] of galleryVisible.entries()){
+   for(const [i,item] of galleryVisible.slice(0,galleryDisplayLimit).entries()){
      const btn=document.createElement('button');btn.type='button';btn.className='dev-gallery-card';btn.dataset.galleryIndex=String(i);btn.setAttribute('aria-label','Увеличить: '+item.title);
      const media=document.createElement('span');media.className='dg-media';
      const img=document.createElement('img');img.loading='lazy';img.src=item.src;img.alt=item.title;img.decoding='async';media.appendChild(img);
@@ -162,6 +167,7 @@
  document.getElementById('galleryNext').addEventListener('click',()=>displayPhoto(selectedImage+1));
  galleryDialog.addEventListener('click',e=>{if(e.target===galleryDialog)galleryDialog.close()});
  document.addEventListener('keydown',e=>{if(!galleryDialog.open)return;if(e.key==='ArrowLeft'){e.preventDefault();displayPhoto(selectedImage-1)}if(e.key==='ArrowRight'){e.preventDefault();displayPhoto(selectedImage+1)}});
+ document.getElementById('galleryLoadMore').addEventListener('click',()=>{galleryDisplayLimit+=24;redrawGallery(false)});
  document.querySelectorAll('[data-gallery-filter]').forEach(btn=>btn.addEventListener('click',()=>{galleryFilter=btn.dataset.galleryFilter;document.querySelectorAll('[data-gallery-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));redrawGallery()}));
  redrawGallery();
  // GitHub Pages serves static files without a directory listing. The public
@@ -170,10 +176,19 @@
  function photoTitle(filename){return filename.replace(/\.[^.]+$/,'').replace(/^\d{4}[-_]\d{2}[-_]\d{2}[-_]?/,'').replace(/^(dev|screen|screenshot|concept|photo)[-_]/i,'').replace(/[-_]+/g,' ').trim()||'Кадр разработки'}
  async function refreshGallery(){
    try {
-     const response=await fetch('https://api.github.com/repos/philip377/zerox/contents/gallery?ref=main',{headers:{'Accept':'application/vnd.github+json'}});
-     if(!response.ok)throw new Error('Gallery listing unavailable: '+response.status);
-     const files=await response.json();if(!Array.isArray(files))throw new Error('Unexpected listing format');
-     const photos=files.filter(f=>f.type==='file'&&/\.(png|jpe?g|webp|gif|avif)$/i.test(f.name)&&f.size<20000000).sort((a,b)=>b.name.localeCompare(a.name,'ru')).map(file=>{
+     let files;
+     try {
+       const response=await fetch('https://api.github.com/repos/philip377/zerox/contents/gallery?ref=main',{headers:{'Accept':'application/vnd.github+json'}});
+       if(!response.ok)throw new Error('Gallery listing unavailable: '+response.status);
+       files=await response.json();if(!Array.isArray(files))throw new Error('Unexpected listing format');
+     } catch(_apiError) {
+       // The static catalog still works if GitHub API rate limits anonymous visitors.
+       const fallback=await fetch('gallery/catalog.json');
+       if(!fallback.ok)throw new Error('Static gallery catalog unavailable: '+fallback.status);
+       const cached=await fallback.json();
+       files=cached.map(name=>({name,type:'file',size:0}));
+     }
+     const photos=files.filter(f=>f.type==='file'&&/\.(png|jpe?g|webp|gif|avif|svg)$/i.test(f.name)&&f.size<20000000).sort((a,b)=>b.name.localeCompare(a.name,'ru')).map(file=>{
        const concept=/^concept[-_]/i.test(file.name);
        return {title:photoTitle(file.name),src:'gallery/'+encodeURIComponent(file.name),category:concept?'concept':'development',tag:concept?'КОНЦЕПТ':'РАЗРАБОТКА',caption:concept?'Авторский концепт':'Кадр из разработки ZeroxGenesis'};
      });
